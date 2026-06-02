@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     const pipelinesData = await pipelinesRes.json();
     const ownersData = await ownersRes.json();
 
-    const pipeline = pipelinesData.results.find(p => p.label.toLowerCase() === 'restrooms');
+    const pipeline = pipelinesData.results.find(p => p.label.toLowerCase() === 'duraplan restrooms');
     if (!pipeline) return res.status(500).json({ error: 'Pipeline "Restrooms" not found in HubSpot. Available: ' + pipelinesData.results.map(p => p.label).join(', ') });
     const stage = pipeline.stages.find(s => s.label.toLowerCase() === 'triage');
     if (!stage) return res.status(500).json({ error: 'Stage "Triage" not found in Restrooms pipeline. Available: ' + pipeline.stages.map(s => s.label).join(', ') });
