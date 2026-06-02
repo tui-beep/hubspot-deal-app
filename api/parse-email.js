@@ -66,6 +66,7 @@ Return ONLY a JSON object:
 - "company_name": client's company (from signature/content/email domain), or null
 - "proposal_final_due_date": YYYY-MM-DD format. Use any urgency mentioned. If none, default to 14 days from today.
 - "description": brief 1-2 sentence summary
+- "email_subject": short descriptive subject for this email if it doesn't already have one obvious from the content (5-8 words)
 
 JSON only. No markdown.`;
 
@@ -107,6 +108,7 @@ JSON only. No markdown.`;
       proposal_final_due_date: parsed.proposal_final_due_date,
       proposal_target_due_date: subtractBizDays(parsed.proposal_final_due_date, 5),
       description: parsed.description,
+      email_subject: parsed.email_subject,
       _hubspot: {
         pipeline_id: pipeline.id,
         stage_id: stage.id,
