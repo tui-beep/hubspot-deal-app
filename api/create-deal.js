@@ -6,16 +6,17 @@ export default async function handler(req, res) {
     client_email, client_name, company_name,
     proposal_final_due_date, proposal_target_due_date, description,
     email_subject, email_body,
+    pipeline_id, stage_id, owner_id, priority, delivery_method,
     _hubspot
   } = req.body || {};
 
   if (!dealname) return res.status(400).json({ error: 'Deal name is required' });
-  if (!_hubspot?.pipeline_id) return res.status(400).json({ error: 'Missing HubSpot metadata — re-run Parse Email first' });
+  if (!pipeline_id || !stage_id || !owner_id) return res.status(400).json({ error: 'Pipeline, stage, and owner are required' });
 
   const token = process.env.HUBSPOT_TOKEN;
   if (!token) return res.status(500).json({ error: 'HUBSPOT_TOKEN not set' });
   const hsHeaders = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
-  const pn = _hubspot.property_names || {};
+  const pn = _hubspot?.property_names || {};
 
   const result = { contactFound: false, contactCreated: false, companyFound: false, companyCreated: false, emailCreated: false };
 
@@ -25,7 +26,6 @@ export default async function handler(req, res) {
     let isExistingClient = false;
 
     if (client_email) {
-      // Look up existing contact by email
       const searchRes = await fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', {
         method: 'POST', headers: hsHeaders,
         body: JSON.stringify({
@@ -39,37 +39,25 @@ export default async function handler(req, res) {
           contactId = sd.results[0].id;
           isExistingClient = true;
           result.contactFound = true;
-          // Get associated company (v4)
           const assocRes = await fetch(`https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/companies`, { headers: hsHeaders });
           if (assocRes.ok) {
             const ad = await assocRes.json();
-            if (ad.results?.length > 0) {
-              companyId = ad.results[0].toObjectId;
-              result.companyFound = true;
-            }
+            if (ad.results?.length > 0) { companyId = ad.results[0].toObjectId; result.companyFound = true; }
           }
         }
       }
 
-      // Create contact if not found
       if (!contactId) {
         const nameParts = (client_name || '').trim().split(/\s+/);
         const cRes = await fetch('https://api.hubapi.com/crm/v3/objects/contacts', {
           method: 'POST', headers: hsHeaders,
           body: JSON.stringify({ properties: { email: client_email, firstname: nameParts[0] || '', lastname: nameParts.slice(1).join(' ') || '' } })
         });
-        if (cRes.ok) {
-          contactId = (await cRes.json()).id;
-          result.contactCreated = true;
-        } else {
-          const err = await cRes.json();
-          return res.status(500).json({ error: 'Contact creation failed: ' + (err.message || 'unknown') });
-        }
+        if (cRes.ok) { contactId = (await cRes.json()).id; result.contactCreated = true; }
+        else { const err = await cRes.json(); return res.status(500).json({ error: 'Contact creation failed: ' + (err.message || 'unknown') }); }
       }
 
-      // Look up or create company
       if (!companyId && company_name) {
-        // First check if company already exists by name
         const searchCoRes = await fetch('https://api.hubapi.com/crm/v3/objects/companies/search', {
           method: 'POST', headers: hsHeaders,
           body: JSON.stringify({
@@ -79,41 +67,30 @@ export default async function handler(req, res) {
         });
         if (searchCoRes.ok) {
           const scd = await searchCoRes.json();
-          if (scd.results?.length > 0) {
-            companyId = scd.results[0].id;
-            result.companyFound = true;
-          }
+          if (scd.results?.length > 0) { companyId = scd.results[0].id; result.companyFound = true; }
         }
-        // If still not found, create it
         if (!companyId) {
           const coRes = await fetch('https://api.hubapi.com/crm/v3/objects/companies', {
             method: 'POST', headers: hsHeaders,
             body: JSON.stringify({ properties: { name: company_name } })
           });
-          if (coRes.ok) {
-            companyId = (await coRes.json()).id;
-            result.companyCreated = true;
-          } else {
-            const err = await coRes.json();
-            result.companyError = err.message || 'Company creation failed';
-          }
+          if (coRes.ok) { companyId = (await coRes.json()).id; result.companyCreated = true; }
+          else { const err = await coRes.json(); result.companyError = err.message || 'Company creation failed'; }
         }
-        // Associate contact with company (v4)
         if (companyId && contactId) {
           await fetch(`https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/default/companies/${companyId}`, { method: 'PUT', headers: hsHeaders });
         }
       }
     }
 
-    // Build deal properties
     const properties = {
       dealname,
-      pipeline: _hubspot.pipeline_id,
-      dealstage: _hubspot.stage_id,
-      hubspot_owner_id: _hubspot.owner_id
+      pipeline: pipeline_id,
+      dealstage: stage_id,
+      hubspot_owner_id: owner_id
     };
-    if (pn.priority && _hubspot.priority_value) properties[pn.priority] = _hubspot.priority_value;
-    if (pn.delivery_method && _hubspot.delivery_method_value) properties[pn.delivery_method] = _hubspot.delivery_method_value;
+    if (pn.priority && priority) properties[pn.priority] = priority;
+    if (pn.delivery_method && delivery_method) properties[pn.delivery_method] = delivery_method;
     if (pn.deal_type && deal_type) properties[pn.deal_type] = deal_type;
     if (pn.region && region) properties[pn.region] = region;
     if (pn.lead_source && lead_source) properties[pn.lead_source] = lead_source;
@@ -126,7 +103,6 @@ export default async function handler(req, res) {
       if (csValue) properties[pn.client_status] = csValue;
     }
 
-    // Create deal
     const dealRes = await fetch('https://api.hubapi.com/crm/v3/objects/deals', {
       method: 'POST', headers: hsHeaders,
       body: JSON.stringify({ properties })
@@ -135,20 +111,13 @@ export default async function handler(req, res) {
     if (!dealRes.ok) return res.status(500).json({ error: dealData.message || 'Deal creation failed', details: dealData });
     const dealId = dealData.id;
 
-    // Associate deal with contact and company (v4)
     if (contactId) await fetch(`https://api.hubapi.com/crm/v4/objects/deals/${dealId}/associations/default/contacts/${contactId}`, { method: 'PUT', headers: hsHeaders });
     if (companyId) await fetch(`https://api.hubapi.com/crm/v4/objects/deals/${dealId}/associations/default/companies/${companyId}`, { method: 'PUT', headers: hsHeaders });
 
-    // Log email engagement in HubSpot (legacy engagements API)
     if (email_subject && email_body) {
       const nameParts = (client_name || '').trim().split(/\s+/);
       const engagement = {
-        engagement: {
-          active: true,
-          type: 'EMAIL',
-          timestamp: Date.now(),
-          ownerId: parseInt(_hubspot.owner_id)
-        },
+        engagement: { active: true, type: 'EMAIL', timestamp: Date.now(), ownerId: parseInt(owner_id) },
         associations: {
           contactIds: contactId ? [parseInt(contactId)] : [],
           companyIds: companyId ? [parseInt(companyId)] : [],
@@ -158,26 +127,15 @@ export default async function handler(req, res) {
           subject: email_subject,
           text: email_body,
           html: email_body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>'),
-          ...(client_email && {
-            from: {
-              email: client_email,
-              firstName: nameParts[0] || '',
-              lastName: nameParts.slice(1).join(' ') || ''
-            }
-          })
+          ...(client_email && { from: { email: client_email, firstName: nameParts[0] || '', lastName: nameParts.slice(1).join(' ') || '' } })
         }
       };
-
       const emailRes = await fetch('https://api.hubapi.com/engagements/v1/engagements', {
         method: 'POST', headers: hsHeaders,
         body: JSON.stringify(engagement)
       });
-      if (emailRes.ok) {
-        result.emailCreated = true;
-      } else {
-        const err = await emailRes.json();
-        result.emailError = err.message || 'Email logging failed';
-      }
+      if (emailRes.ok) result.emailCreated = true;
+      else { const err = await emailRes.json(); result.emailError = err.message || 'Email logging failed'; }
     }
 
     return res.status(200).json({ success: true, id: dealId, ...result });
