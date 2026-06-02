@@ -116,6 +116,7 @@ const addBizDays = (dateStr, days) => {
     }
 
     const clientStatusNew = clientStatusProp?.options?.find(o => /new|prospect/i.test(o.label))?.value;
+    const clientStatusExisting = clientStatusProp?.options?.find(o => /existing|repeat|returning|active|current/i.test(o.label))?.value;
 
     return res.status(200).json({
       dealname: parsed.dealname,
