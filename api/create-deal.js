@@ -139,31 +139,40 @@ export default async function handler(req, res) {
     if (contactId) await fetch(`https://api.hubapi.com/crm/v4/objects/deals/${dealId}/associations/default/contacts/${contactId}`, { method: 'PUT', headers: hsHeaders });
     if (companyId) await fetch(`https://api.hubapi.com/crm/v4/objects/deals/${dealId}/associations/default/companies/${companyId}`, { method: 'PUT', headers: hsHeaders });
 
-    // Log email engagement in HubSpot
+    // Log email engagement in HubSpot (legacy engagements API)
     if (email_subject && email_body) {
       const nameParts = (client_name || '').trim().split(/\s+/);
-      const emailProps = {
-        hs_email_subject: email_subject,
-        hs_email_text: email_body,
-        hs_email_direction: 'INCOMING_EMAIL',
-        hs_email_status: 'SENT',
-        hs_timestamp: Date.now().toString(),
-        hubspot_owner_id: _hubspot.owner_id
+      const engagement = {
+        engagement: {
+          active: true,
+          type: 'EMAIL',
+          timestamp: Date.now(),
+          ownerId: parseInt(_hubspot.owner_id)
+        },
+        associations: {
+          contactIds: contactId ? [parseInt(contactId)] : [],
+          companyIds: companyId ? [parseInt(companyId)] : [],
+          dealIds: [parseInt(dealId)]
+        },
+        metadata: {
+          subject: email_subject,
+          text: email_body,
+          ...(client_email && {
+            from: {
+              email: client_email,
+              firstName: nameParts[0] || '',
+              lastName: nameParts.slice(1).join(' ') || ''
+            }
+          })
+        }
       };
-      if (client_email) emailProps.hs_email_from_email = client_email;
-      if (nameParts[0]) emailProps.hs_email_from_firstname = nameParts[0];
-      if (nameParts.slice(1).join(' ')) emailProps.hs_email_from_lastname = nameParts.slice(1).join(' ');
 
-      const emailRes = await fetch('https://api.hubapi.com/crm/v3/objects/emails', {
+      const emailRes = await fetch('https://api.hubapi.com/engagements/v1/engagements', {
         method: 'POST', headers: hsHeaders,
-        body: JSON.stringify({ properties: emailProps })
+        body: JSON.stringify(engagement)
       });
       if (emailRes.ok) {
-        const emailId = (await emailRes.json()).id;
         result.emailCreated = true;
-        if (contactId) await fetch(`https://api.hubapi.com/crm/v4/objects/emails/${emailId}/associations/default/contacts/${contactId}`, { method: 'PUT', headers: hsHeaders });
-        await fetch(`https://api.hubapi.com/crm/v4/objects/emails/${emailId}/associations/default/deals/${dealId}`, { method: 'PUT', headers: hsHeaders });
-        if (companyId) await fetch(`https://api.hubapi.com/crm/v4/objects/emails/${emailId}/associations/default/companies/${companyId}`, { method: 'PUT', headers: hsHeaders });
       } else {
         const err = await emailRes.json();
         result.emailError = err.message || 'Email logging failed';
