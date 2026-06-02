@@ -40,7 +40,7 @@
     <label for="dealname">Deal Name</label>
     <input id="dealname" type="text">
 
-    <div class="locked">Pipeline: <strong>Duraplan Restrooms</strong> &nbsp;·&nbsp; Stage: <strong>7. Triage</strong>
+    <div class="locked">Pipeline: <strong>Duraplan Restrooms</strong> &nbsp;·&nbsp; Stage: <strong>7. Triage</strong> &nbsp;·&nbsp; Priority: <strong>Medium</strong></div>
 
     <label for="deal_type">Deal Type</label>
     <select id="deal_type"></select>
@@ -200,3 +200,33 @@
         _hubspot: hubspotMeta
       };
       btn.disabled = true;
+      statusEl.className = 'status loading';
+      statusEl.textContent = 'Creating deal in HubSpot...';
+      try {
+        const response = await fetch('/api/create-deal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to create deal');
+        const parts = ['Deal created! ID: <strong>' + data.id + '</strong>'];
+        if (data.contactCreated) parts.push('New contact created');
+        else if (data.contactFound) parts.push('Existing contact linked');
+        if (data.companyCreated) parts.push('New company created');
+        else if (data.companyFound) parts.push('Company linked');
+        if (data.emailCreated) parts.push('Email logged');
+        if (data.companyError) parts.push('⚠ Company error: ' + data.companyError);
+        if (data.emailError) parts.push('⚠ Email error: ' + data.emailError);
+        statusEl.className = 'status success';
+        statusEl.innerHTML = parts.join(' · ');
+      } catch (err) {
+        statusEl.className = 'status error';
+        statusEl.textContent = 'Error: ' + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
