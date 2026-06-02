@@ -40,7 +40,7 @@
     <label for="dealname">Deal Name</label>
     <input id="dealname" type="text">
 
-    <div class="locked">Pipeline: <strong>Restrooms</strong> &nbsp;·&nbsp; Stage: <strong>Triage</strong> &nbsp;·&nbsp; Priority: <strong>Medium</strong></div>
+    <div class="locked">Pipeline: <strong>Duraplan Restrooms</strong> &nbsp;·&nbsp; Stage: <strong>7. Triage</strong> &nbsp;·&nbsp; Priority: <strong>Medium</strong></div>
 
     <label for="deal_type">Deal Type</label>
     <select id="deal_type"></select>
@@ -85,7 +85,13 @@
     <label for="description">Notes</label>
     <textarea id="description" style="min-height: 80px;"></textarea>
 
-    <button id="createBtn" onclick="createDeal()">Create Deal in HubSpot</button>
+    <h3>Log Email in HubSpot</h3>
+    <label for="email_subject">Subject</label>
+    <input id="email_subject" type="text">
+    <label for="email_body">Email Body</label>
+    <textarea id="email_body" style="min-height: 150px;"></textarea>
+
+    <button id="createBtn" onclick="createDeal()">Create Deal & Log Email in HubSpot</button>
     <div id="createStatus"></div>
   </div>
 
@@ -153,6 +159,8 @@
         document.getElementById('client_name').value = data.client_name || '';
         document.getElementById('company_name').value = data.company_name || '';
         document.getElementById('description').value = data.description || '';
+        document.getElementById('email_subject').value = data.email_subject || '';
+        document.getElementById('email_body').value = emailText;
 
         hubspotMeta = data._hubspot;
         document.getElementById('dealCard').classList.remove('hidden');
@@ -187,30 +195,8 @@
         proposal_final_due_date: document.getElementById('final_due_date').value,
         proposal_target_due_date: document.getElementById('target_due_date').value,
         description: document.getElementById('description').value,
+        email_subject: document.getElementById('email_subject').value.trim(),
+        email_body: document.getElementById('email_body').value,
         _hubspot: hubspotMeta
       };
       btn.disabled = true;
-      statusEl.className = 'status loading';
-      statusEl.textContent = 'Creating deal in HubSpot...';
-      try {
-        const response = await fetch('/api/create-deal', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Failed to create deal');
-        statusEl.className = 'status success';
-        statusEl.innerHTML = 'Deal created! HubSpot deal ID: <strong>' + data.id + '</strong>' +
-          (data.contactCreated ? ' · New contact created' : data.contactFound ? ' · Existing contact linked' : '') +
-          (data.companyCreated ? ' · New company created' : data.companyFound ? ' · Company linked' : '');
-      } catch (err) {
-        statusEl.className = 'status error';
-        statusEl.textContent = 'Error: ' + err.message;
-      } finally {
-        btn.disabled = false;
-      }
-    }
-  </script>
-</body>
-</html>
