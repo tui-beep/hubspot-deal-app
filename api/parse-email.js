@@ -114,7 +114,7 @@ JSON only. No markdown.`;
         stage_id: stage.id,
         owner_id: owner.id,
         priority_value: findOptValue(priorityProp, 'Medium') || 'medium',
-        delivery_method_value: findOptValue(deliveryProp, 'Email') || 'email',
+        delivery_method_value: findOptValue(deliveryProp, 'Email') || 'Email',
         property_names: {
           deal_type: dealTypeProp?.name,
           region: regionProp?.name,
