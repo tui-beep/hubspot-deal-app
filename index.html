@@ -4,12 +4,15 @@
   <meta charset="UTF-8">
   <title>Email → HubSpot Deal</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 20px; }
+    body { font-family: system-ui, sans-serif; max-width: 680px; margin: 40px auto; padding: 20px; }
     h1 { margin-top: 0; }
+    h2, h3 { margin-top: 24px; }
     .card { background: #f5f5f7; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-    textarea, input { width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 12px; box-sizing: border-box; }
+    textarea, input, select { width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 12px; box-sizing: border-box; background: white; }
     textarea { min-height: 180px; font-family: inherit; }
     label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .locked { padding: 10px; background: #ececf0; border-radius: 6px; margin-bottom: 12px; font-size: 14px; color: #555; }
+    .locked strong { color: #1a1a1a; }
     button { background: #0070f3; color: white; border: none; padding: 12px 20px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; width: 100%; }
     button:disabled { background: #999; }
     .status { padding: 10px; border-radius: 6px; margin-top: 12px; font-size: 14px; }
@@ -17,6 +20,8 @@
     .error { background: #f8d7da; color: #721c24; }
     .loading { background: #e2e3e5; color: #383d41; }
     .hidden { display: none; }
+    .row { display: flex; gap: 12px; }
+    .row > div { flex: 1; }
   </style>
 </head>
 <body>
@@ -31,21 +36,91 @@
 
   <div class="card hidden" id="dealCard">
     <h2 style="margin-top:0;">Review deal details</h2>
-    <label for="dealname">Deal name</label>
+
+    <label for="dealname">Deal Name</label>
     <input id="dealname" type="text">
-    <label for="amount">Amount ($)</label>
-    <input id="amount" type="number" step="0.01">
-    <label for="closedate">Close date</label>
-    <input id="closedate" type="date">
-    <label for="dealstage">Deal stage</label>
-    <input id="dealstage" type="text" value="appointmentscheduled">
+
+    <div class="locked">Pipeline: <strong>Restrooms</strong> &nbsp;·&nbsp; Stage: <strong>Triage</strong> &nbsp;·&nbsp; Priority: <strong>Medium</strong></div>
+
+    <label for="deal_type">Deal Type</label>
+    <select id="deal_type"></select>
+
+    <label for="region">Region</label>
+    <select id="region"></select>
+
+    <label for="lead_source">Lead Source</label>
+    <select id="lead_source"></select>
+
+    <label for="client_type">Client Type</label>
+    <select id="client_type"></select>
+
+    <div class="row">
+      <div>
+        <label for="final_due_date">Proposal Final Due Date</label>
+        <input id="final_due_date" type="date" onchange="recomputeTargetDate()">
+      </div>
+      <div>
+        <label for="target_due_date">Proposal Target Due Date</label>
+        <input id="target_due_date" type="date">
+      </div>
+    </div>
+
+    <div class="locked">Delivery Method: <strong>Email</strong> &nbsp;·&nbsp; Owner: <strong>Sian Harvey</strong></div>
+
+    <h3>Client</h3>
+    <label for="client_email">Client Email</label>
+    <input id="client_email" type="email" placeholder="If supplied, the contact will be looked up or created">
+
+    <div class="row">
+      <div>
+        <label for="client_name">Client Name</label>
+        <input id="client_name" type="text">
+      </div>
+      <div>
+        <label for="company_name">Company Name</label>
+        <input id="company_name" type="text">
+      </div>
+    </div>
+
     <label for="description">Notes</label>
     <textarea id="description" style="min-height: 80px;"></textarea>
+
     <button id="createBtn" onclick="createDeal()">Create Deal in HubSpot</button>
     <div id="createStatus"></div>
   </div>
 
   <script>
+    let hubspotMeta = null;
+
+    function fillDropdown(id, options, selectedValue) {
+      const sel = document.getElementById(id);
+      sel.innerHTML = '';
+      const blank = document.createElement('option');
+      blank.value = '';
+      blank.textContent = '— select —';
+      sel.appendChild(blank);
+      options.forEach(opt => {
+        const o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.label;
+        if (opt.value === selectedValue) o.selected = true;
+        sel.appendChild(o);
+      });
+    }
+
+    function recomputeTargetDate() {
+      const finalDate = document.getElementById('final_due_date').value;
+      if (!finalDate) return;
+      const d = new Date(finalDate);
+      let remaining = 5;
+      while (remaining > 0) {
+        d.setDate(d.getDate() - 1);
+        const day = d.getDay();
+        if (day !== 0 && day !== 6) remaining--;
+      }
+      document.getElementById('target_due_date').value = d.toISOString().split('T')[0];
+    }
+
     async function parseEmail() {
       const emailText = document.getElementById('email').value.trim();
       const statusEl = document.getElementById('parseStatus');
@@ -57,7 +132,7 @@
       }
       btn.disabled = true;
       statusEl.className = 'status loading';
-      statusEl.textContent = 'Reading email and extracting deal info...';
+      statusEl.textContent = 'Fetching HubSpot config and parsing email...';
       try {
         const response = await fetch('/api/parse-email', {
           method: 'POST',
@@ -66,10 +141,20 @@
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Failed to parse');
+
         document.getElementById('dealname').value = data.dealname || '';
-        document.getElementById('amount').value = data.amount || '';
-        document.getElementById('closedate').value = data.closedate || '';
+        fillDropdown('deal_type', data.deal_type_options || [], data.deal_type);
+        fillDropdown('region', data.region_options || [], data.region);
+        fillDropdown('lead_source', data.lead_source_options || [], data.lead_source);
+        fillDropdown('client_type', data.client_type_options || [], data.client_type);
+        document.getElementById('final_due_date').value = data.proposal_final_due_date || '';
+        document.getElementById('target_due_date').value = data.proposal_target_due_date || '';
+        document.getElementById('client_email').value = data.client_email || '';
+        document.getElementById('client_name').value = data.client_name || '';
+        document.getElementById('company_name').value = data.company_name || '';
         document.getElementById('description').value = data.description || '';
+
+        hubspotMeta = data._hubspot;
         document.getElementById('dealCard').classList.remove('hidden');
         statusEl.className = 'status success';
         statusEl.textContent = 'Email parsed. Review the fields below.';
@@ -92,10 +177,17 @@
       }
       const payload = {
         dealname,
-        amount: document.getElementById('amount').value,
-        closedate: document.getElementById('closedate').value,
-        dealstage: document.getElementById('dealstage').value,
-        description: document.getElementById('description').value
+        deal_type: document.getElementById('deal_type').value,
+        region: document.getElementById('region').value,
+        lead_source: document.getElementById('lead_source').value,
+        client_type: document.getElementById('client_type').value,
+        client_email: document.getElementById('client_email').value.trim(),
+        client_name: document.getElementById('client_name').value.trim(),
+        company_name: document.getElementById('company_name').value.trim(),
+        proposal_final_due_date: document.getElementById('final_due_date').value,
+        proposal_target_due_date: document.getElementById('target_due_date').value,
+        description: document.getElementById('description').value,
+        _hubspot: hubspotMeta
       };
       btn.disabled = true;
       statusEl.className = 'status loading';
@@ -109,7 +201,9 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Failed to create deal');
         statusEl.className = 'status success';
-        statusEl.innerHTML = 'Deal created! HubSpot deal ID: <strong>' + data.id + '</strong>';
+        statusEl.innerHTML = 'Deal created! HubSpot deal ID: <strong>' + data.id + '</strong>' +
+          (data.contactCreated ? ' · New contact created' : data.contactFound ? ' · Existing contact linked' : '') +
+          (data.companyCreated ? ' · New company created' : data.companyFound ? ' · Company linked' : '');
       } catch (err) {
         statusEl.className = 'status error';
         statusEl.textContent = 'Error: ' + err.message;
