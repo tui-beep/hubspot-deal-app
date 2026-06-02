@@ -25,7 +25,7 @@ export default async function handler(req, res) {
 
     const pipeline = pipelinesData.results.find(p => p.label.toLowerCase() === 'duraplan restrooms');
     if (!pipeline) return res.status(500).json({ error: 'Pipeline "Restrooms" not found in HubSpot. Available: ' + pipelinesData.results.map(p => p.label).join(', ') });
-    const stage = pipeline.stages.find(s => s.label.toLowerCase() === 'triage');
+    const stage = pipeline.stages.find(s => s.label.toLowerCase() === '7. triage');
     if (!stage) return res.status(500).json({ error: 'Stage "Triage" not found in Restrooms pipeline. Available: ' + pipeline.stages.map(s => s.label).join(', ') });
     const owner = ownersData.results.find(o => `${o.firstName || ''} ${o.lastName || ''}`.toLowerCase().trim() === 'sian harvey');
     if (!owner) return res.status(500).json({ error: 'Owner "Sian Harvey" not found in HubSpot owners.' });
