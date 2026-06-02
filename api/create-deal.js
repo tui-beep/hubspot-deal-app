@@ -157,6 +157,7 @@ export default async function handler(req, res) {
         metadata: {
           subject: email_subject,
           text: email_body,
+          html: email_body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>'),
           ...(client_email && {
             from: {
               email: client_email,
