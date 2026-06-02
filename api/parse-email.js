@@ -30,8 +30,8 @@ export default async function handler(req, res) {
     const owner = ownersData.results.find(o => `${o.firstName || ''} ${o.lastName || ''}`.toLowerCase().trim() === 'sian harvey');
     if (!owner) return res.status(500).json({ error: 'Owner "Sian Harvey" not found in HubSpot owners.' });
 
-    const findProp = (label) => propsData.results.find(p => p.label.toLowerCase() === label.toLowerCase());
-    const findOptValue = (prop, label) => prop?.options?.find(o => o.label.toLowerCase() === label.toLowerCase())?.value;
+    const findProp = (label) => propsData.results.find(p => p.label?.toLowerCase() === label?.toLowerCase());
+    const findOptValue = (prop, label) => label ? prop?.options?.find(o => o.label?.toLowerCase() === label.toLowerCase())?.value : null;
     const optsAsArray = (prop) => (prop?.options || []).map(o => ({ label: o.label, value: o.value }));
     const optionLabels = (prop) => (prop?.options || []).map(o => o.label);
 
