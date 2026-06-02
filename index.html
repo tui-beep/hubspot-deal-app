@@ -11,8 +11,6 @@
     textarea, input, select { width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 12px; box-sizing: border-box; background: white; }
     textarea { min-height: 180px; font-family: inherit; }
     label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-    .locked { padding: 10px; background: #ececf0; border-radius: 6px; margin-bottom: 12px; font-size: 14px; color: #555; }
-    .locked strong { color: #1a1a1a; }
     button { background: #0070f3; color: white; border: none; padding: 12px 20px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; width: 100%; }
     button:disabled { background: #999; }
     .status { padding: 10px; border-radius: 6px; margin-top: 12px; font-size: 14px; }
@@ -40,7 +38,19 @@
     <label for="dealname">Deal Name</label>
     <input id="dealname" type="text">
 
-    <div class="locked">Pipeline: <strong>Duraplan Restrooms</strong> &nbsp;·&nbsp; Stage: <strong>7. Triage</strong> &nbsp;·&nbsp; Priority: <strong>Medium</strong></div>
+    <div class="row">
+      <div>
+        <label for="pipeline">Pipeline</label>
+        <select id="pipeline" onchange="onPipelineChange()"></select>
+      </div>
+      <div>
+        <label for="stage">Stage</label>
+        <select id="stage"></select>
+      </div>
+    </div>
+
+    <label for="priority">Priority</label>
+    <select id="priority"></select>
 
     <label for="deal_type">Deal Type</label>
     <select id="deal_type"></select>
@@ -65,7 +75,16 @@
       </div>
     </div>
 
-    <div class="locked">Delivery Method: <strong>Email</strong> &nbsp;·&nbsp; Owner: <strong>Sian Harvey</strong></div>
+    <div class="row">
+      <div>
+        <label for="delivery_method">Delivery Method</label>
+        <input id="delivery_method" type="text">
+      </div>
+      <div>
+        <label for="owner">Owner</label>
+        <select id="owner"></select>
+      </div>
+    </div>
 
     <h3>Client</h3>
     <label for="client_email">Client Email</label>
@@ -97,14 +116,17 @@
 
   <script>
     let hubspotMeta = null;
+    let allPipelines = [];
 
-    function fillDropdown(id, options, selectedValue) {
+    function fillDropdown(id, options, selectedValue, includeBlank = true) {
       const sel = document.getElementById(id);
       sel.innerHTML = '';
-      const blank = document.createElement('option');
-      blank.value = '';
-      blank.textContent = '— select —';
-      sel.appendChild(blank);
+      if (includeBlank) {
+        const blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = '— select —';
+        sel.appendChild(blank);
+      }
       options.forEach(opt => {
         const o = document.createElement('option');
         o.value = opt.value;
@@ -112,6 +134,13 @@
         if (opt.value === selectedValue) o.selected = true;
         sel.appendChild(o);
       });
+    }
+
+    function onPipelineChange() {
+      const pipelineId = document.getElementById('pipeline').value;
+      const pipeline = allPipelines.find(p => p.id === pipelineId);
+      if (!pipeline) return;
+      fillDropdown('stage', pipeline.stages.map(s => ({ label: s.label, value: s.id })), pipeline.stages[0]?.id, false);
     }
 
     function recomputeTargetDate() {
@@ -149,6 +178,17 @@
         if (!response.ok) throw new Error(data.error || 'Failed to parse');
 
         document.getElementById('dealname').value = data.dealname || '';
+
+        allPipelines = data.pipelines || [];
+        fillDropdown('pipeline', allPipelines.map(p => ({ label: p.label, value: p.id })), data.pipeline_id, false);
+        const currentPipeline = allPipelines.find(p => p.id === data.pipeline_id);
+        if (currentPipeline) {
+          fillDropdown('stage', currentPipeline.stages.map(s => ({ label: s.label, value: s.id })), data.stage_id, false);
+        }
+        fillDropdown('priority', data.priority_options || [], data.priority, false);
+        fillDropdown('owner', (data.owners || []).map(o => ({ label: o.name, value: o.id })), data.owner_id, false);
+        document.getElementById('delivery_method').value = data.delivery_method || '';
+
         fillDropdown('deal_type', data.deal_type_options || [], data.deal_type);
         fillDropdown('region', data.region_options || [], data.region);
         fillDropdown('lead_source', data.lead_source_options || [], data.lead_source);
@@ -185,6 +225,11 @@
       }
       const payload = {
         dealname,
+        pipeline_id: document.getElementById('pipeline').value,
+        stage_id: document.getElementById('stage').value,
+        priority: document.getElementById('priority').value,
+        owner_id: document.getElementById('owner').value,
+        delivery_method: document.getElementById('delivery_method').value.trim(),
         deal_type: document.getElementById('deal_type').value,
         region: document.getElementById('region').value,
         lead_source: document.getElementById('lead_source').value,
