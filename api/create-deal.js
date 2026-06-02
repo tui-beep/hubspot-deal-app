@@ -5,6 +5,7 @@ export default async function handler(req, res) {
     dealname, deal_type, region, lead_source, client_type,
     client_email, client_name, company_name,
     proposal_final_due_date, proposal_target_due_date, description,
+    email_subject, email_body,
     _hubspot
   } = req.body || {};
 
@@ -16,7 +17,7 @@ export default async function handler(req, res) {
   const hsHeaders = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
   const pn = _hubspot.property_names || {};
 
-  const result = { contactFound: false, contactCreated: false, companyFound: false, companyCreated: false };
+  const result = { contactFound: false, contactCreated: false, companyFound: false, companyCreated: false, emailCreated: false };
 
   try {
     let contactId = null;
@@ -24,6 +25,7 @@ export default async function handler(req, res) {
     let isExistingClient = false;
 
     if (client_email) {
+      // Look up existing contact by email
       const searchRes = await fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', {
         method: 'POST', headers: hsHeaders,
         body: JSON.stringify({
@@ -37,29 +39,27 @@ export default async function handler(req, res) {
           contactId = sd.results[0].id;
           isExistingClient = true;
           result.contactFound = true;
-
-          const assocRes = await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}/associations/companies`, { headers: hsHeaders });
+          // Get associated company (v4)
+          const assocRes = await fetch(`https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/companies`, { headers: hsHeaders });
           if (assocRes.ok) {
             const ad = await assocRes.json();
             if (ad.results?.length > 0) {
-              companyId = ad.results[0].id;
+              companyId = ad.results[0].toObjectId;
               result.companyFound = true;
             }
           }
         }
       }
 
+      // Create contact if not found
       if (!contactId) {
         const nameParts = (client_name || '').trim().split(/\s+/);
-        const firstname = nameParts[0] || '';
-        const lastname = nameParts.slice(1).join(' ') || '';
         const cRes = await fetch('https://api.hubapi.com/crm/v3/objects/contacts', {
           method: 'POST', headers: hsHeaders,
-          body: JSON.stringify({ properties: { email: client_email, firstname, lastname } })
+          body: JSON.stringify({ properties: { email: client_email, firstname: nameParts[0] || '', lastname: nameParts.slice(1).join(' ') || '' } })
         });
         if (cRes.ok) {
-          const cd = await cRes.json();
-          contactId = cd.id;
+          contactId = (await cRes.json()).id;
           result.contactCreated = true;
         } else {
           const err = await cRes.json();
@@ -67,22 +67,45 @@ export default async function handler(req, res) {
         }
       }
 
+      // Look up or create company
       if (!companyId && company_name) {
-        const coRes = await fetch('https://api.hubapi.com/crm/v3/objects/companies', {
+        // First check if company already exists by name
+        const searchCoRes = await fetch('https://api.hubapi.com/crm/v3/objects/companies/search', {
           method: 'POST', headers: hsHeaders,
-          body: JSON.stringify({ properties: { name: company_name } })
+          body: JSON.stringify({
+            filterGroups: [{ filters: [{ propertyName: 'name', operator: 'EQ', value: company_name }] }],
+            properties: ['name'], limit: 1
+          })
         });
-        if (coRes.ok) {
-          const cod = await coRes.json();
-          companyId = cod.id;
-          result.companyCreated = true;
-          if (contactId) {
-            await fetch(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}/associations/companies/${companyId}/contact_to_company`, { method: 'PUT', headers: hsHeaders });
+        if (searchCoRes.ok) {
+          const scd = await searchCoRes.json();
+          if (scd.results?.length > 0) {
+            companyId = scd.results[0].id;
+            result.companyFound = true;
           }
+        }
+        // If still not found, create it
+        if (!companyId) {
+          const coRes = await fetch('https://api.hubapi.com/crm/v3/objects/companies', {
+            method: 'POST', headers: hsHeaders,
+            body: JSON.stringify({ properties: { name: company_name } })
+          });
+          if (coRes.ok) {
+            companyId = (await coRes.json()).id;
+            result.companyCreated = true;
+          } else {
+            const err = await coRes.json();
+            result.companyError = err.message || 'Company creation failed';
+          }
+        }
+        // Associate contact with company (v4)
+        if (companyId && contactId) {
+          await fetch(`https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/default/companies/${companyId}`, { method: 'PUT', headers: hsHeaders });
         }
       }
     }
 
+    // Build deal properties
     const properties = {
       dealname,
       pipeline: _hubspot.pipeline_id,
@@ -103,6 +126,7 @@ export default async function handler(req, res) {
       if (csValue) properties[pn.client_status] = csValue;
     }
 
+    // Create deal
     const dealRes = await fetch('https://api.hubapi.com/crm/v3/objects/deals', {
       method: 'POST', headers: hsHeaders,
       body: JSON.stringify({ properties })
@@ -111,11 +135,39 @@ export default async function handler(req, res) {
     if (!dealRes.ok) return res.status(500).json({ error: dealData.message || 'Deal creation failed', details: dealData });
     const dealId = dealData.id;
 
-    if (contactId) {
-      await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${dealId}/associations/contacts/${contactId}/deal_to_contact`, { method: 'PUT', headers: hsHeaders });
-    }
-    if (companyId) {
-      await fetch(`https://api.hubapi.com/crm/v3/objects/deals/${dealId}/associations/companies/${companyId}/deal_to_company`, { method: 'PUT', headers: hsHeaders });
+    // Associate deal with contact and company (v4)
+    if (contactId) await fetch(`https://api.hubapi.com/crm/v4/objects/deals/${dealId}/associations/default/contacts/${contactId}`, { method: 'PUT', headers: hsHeaders });
+    if (companyId) await fetch(`https://api.hubapi.com/crm/v4/objects/deals/${dealId}/associations/default/companies/${companyId}`, { method: 'PUT', headers: hsHeaders });
+
+    // Log email engagement in HubSpot
+    if (email_subject && email_body) {
+      const nameParts = (client_name || '').trim().split(/\s+/);
+      const emailProps = {
+        hs_email_subject: email_subject,
+        hs_email_text: email_body,
+        hs_email_direction: 'INCOMING_EMAIL',
+        hs_email_status: 'SENT',
+        hs_timestamp: Date.now().toString(),
+        hubspot_owner_id: _hubspot.owner_id
+      };
+      if (client_email) emailProps.hs_email_from_email = client_email;
+      if (nameParts[0]) emailProps.hs_email_from_firstname = nameParts[0];
+      if (nameParts.slice(1).join(' ')) emailProps.hs_email_from_lastname = nameParts.slice(1).join(' ');
+
+      const emailRes = await fetch('https://api.hubapi.com/crm/v3/objects/emails', {
+        method: 'POST', headers: hsHeaders,
+        body: JSON.stringify({ properties: emailProps })
+      });
+      if (emailRes.ok) {
+        const emailId = (await emailRes.json()).id;
+        result.emailCreated = true;
+        if (contactId) await fetch(`https://api.hubapi.com/crm/v4/objects/emails/${emailId}/associations/default/contacts/${contactId}`, { method: 'PUT', headers: hsHeaders });
+        await fetch(`https://api.hubapi.com/crm/v4/objects/emails/${emailId}/associations/default/deals/${dealId}`, { method: 'PUT', headers: hsHeaders });
+        if (companyId) await fetch(`https://api.hubapi.com/crm/v4/objects/emails/${emailId}/associations/default/companies/${companyId}`, { method: 'PUT', headers: hsHeaders });
+      } else {
+        const err = await emailRes.json();
+        result.emailError = err.message || 'Email logging failed';
+      }
     }
 
     return res.status(200).json({ success: true, id: dealId, ...result });
