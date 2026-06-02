@@ -63,7 +63,8 @@ Return ONLY a JSON object:
 - "client_email": main client's email address, or null
 - "client_name": main client's full name, or null
 - "company_name": client's company (from signature/content/email domain), or null
-- "proposal_final_due_date": YYYY-MM-DD format. Use any urgency mentioned. If none, default to 14 days from today.
+- "email_sent_date": YYYY-MM-DD format of when the email was sent if visible (look for "Sent:", "Date:", "On <date>, X wrote:", or any clear timestamp), else null
+- "client_deadline": YYYY-MM-DD format of the date the client explicitly says they need the proposal or quote by, else null
 - "description": brief 1-2 sentence summary
 - "email_subject": short descriptive subject for this email if it doesn't already have one obvious from the content (5-8 words)
 
@@ -88,8 +89,33 @@ JSON only. No markdown.`;
       return d.toISOString().split('T')[0];
     };
 
+const addBizDays = (dateStr, days) => {
+      if (!dateStr) return null;
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return null;
+      let r = days;
+      while (r > 0) { d.setDate(d.getDate() + 1); const day = d.getDay(); if (day !== 0 && day !== 6) r--; }
+      return d.toISOString().split('T')[0];
+    };
+
+    let finalDueDate, targetDueDate;
+    if (parsed.client_deadline) {
+      finalDueDate = parsed.client_deadline;
+      targetDueDate = subtractBizDays(finalDueDate, 5);
+      if (targetDueDate && new Date(targetDueDate) < new Date(today)) {
+        targetDueDate = finalDueDate;
+      }
+    } else if (parsed.email_sent_date) {
+      const computed = addBizDays(parsed.email_sent_date, 3);
+      finalDueDate = computed;
+      targetDueDate = computed;
+    } else {
+      const computed = addBizDays(today, 3);
+      finalDueDate = computed;
+      targetDueDate = computed;
+    }
+
     const clientStatusNew = clientStatusProp?.options?.find(o => /new|prospect/i.test(o.label))?.value;
-    const clientStatusExisting = clientStatusProp?.options?.find(o => /existing|repeat|returning|active|current/i.test(o.label))?.value;
 
     return res.status(200).json({
       dealname: parsed.dealname,
@@ -104,8 +130,8 @@ JSON only. No markdown.`;
       client_email: parsed.client_email,
       client_name: parsed.client_name,
       company_name: parsed.company_name,
-      proposal_final_due_date: parsed.proposal_final_due_date,
-      proposal_target_due_date: subtractBizDays(parsed.proposal_final_due_date, 5),
+      proposal_final_due_date: finalDueDate,
+      proposal_target_due_date: targetDueDate,
       description: parsed.description,
       email_subject: parsed.email_subject,
 
