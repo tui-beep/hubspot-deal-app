@@ -195,7 +195,6 @@
         document.getElementById('client_email').value = data.client_email || '';
         document.getElementById('client_name').value = data.client_name || '';
         document.getElementById('company_name').value = data.company_name || '';
-        document.getElementById('description').value = data.description || '';
         document.getElementById('email_subject').value = data.email_subject || '';
         document.getElementById('email_body').value = emailText;
 
@@ -236,7 +235,6 @@
         company_name: document.getElementById('company_name').value.trim(),
         proposal_final_due_date: document.getElementById('final_due_date').value,
         proposal_target_due_date: document.getElementById('target_due_date').value,
-        description: document.getElementById('description').value,
         email_subject: document.getElementById('email_subject').value.trim(),
         email_body: document.getElementById('email_body').value,
         _hubspot: hubspotMeta
