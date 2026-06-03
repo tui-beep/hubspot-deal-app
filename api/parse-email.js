@@ -170,7 +170,8 @@ const addBizDays = (dateStr, days) => {
           target_due_date: targetDateProp?.name
         },
         client_status_new: clientStatusNew,
-        client_status_existing: clientStatusExisting
+        client_status_existing: clientStatusExisting,
+        email_logger_id: emailLogger.id
       }
     });
   } catch (err) {
