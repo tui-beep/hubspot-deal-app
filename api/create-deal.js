@@ -117,7 +117,7 @@ export default async function handler(req, res) {
     if (email_subject && email_body) {
       const nameParts = (client_name || '').trim().split(/\s+/);
       const engagement = {
-        engagement: { active: true, type: 'EMAIL', timestamp: Date.now(), ownerId: parseInt(owner_id) },
+        engagement: { active: true, type: 'EMAIL', timestamp: Date.now(), ownerId: parseInt(_hubspot.email_logger_id) },
         associations: {
           contactIds: contactId ? [parseInt(contactId)] : [],
           companyIds: companyId ? [parseInt(companyId)] : [],
