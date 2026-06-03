@@ -28,6 +28,8 @@ export default async function handler(req, res) {
     if (!stage) return res.status(500).json({ error: 'Stage "7. Triage" not found' });
     const owner = ownersData.results.find(o => `${o.firstName || ''} ${o.lastName || ''}`.toLowerCase().trim() === 'sian harvey');
     if (!owner) return res.status(500).json({ error: 'Owner "Sian Harvey" not found' });
+    const emailLogger = ownersData.results.find(o => `${o.firstName || ''} ${o.lastName || ''}`.toLowerCase().trim() === 'tui garton');
+    if (!emailLogger) return res.status(500).json({ error: 'Owner "Tui Garton" not found' });
 
     const findProp = (label) => propsData.results.find(p => p.label?.toLowerCase() === label?.toLowerCase());
     const findOptValue = (prop, label) => label ? prop?.options?.find(o => o.label?.toLowerCase() === label.toLowerCase())?.value : null;
